@@ -132,6 +132,7 @@
         v-model="doc"
         @updateField="updateField"
       />
+      <DealQuotations :deal="dealId" :organization="doc.organization" />
       <div
         v-if="sections.data"
         class="flex flex-1 flex-col justify-between overflow-hidden"
@@ -366,6 +367,7 @@ import Link from '@/components/Controls/Link.vue'
 import Section from '@/components/CollapsibleSection.vue'
 import SidePanelLayout from '@/components/SidePanelLayout.vue'
 import SLASection from '@/components/SLASection.vue'
+import DealQuotations from '@/components/DealQuotations.vue'
 import CustomActions from '@/components/CustomActions.vue'
 import {
   openWebsite,

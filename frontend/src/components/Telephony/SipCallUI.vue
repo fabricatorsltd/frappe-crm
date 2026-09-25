@@ -36,18 +36,38 @@
                 : __('Incoming call...')
           }}
         </div>
-        <div v-if="onCall" class="flex gap-2">
-          <Button
-            :icon="muted ? 'mic-off' : 'mic'"
-            class="rounded-full"
-            @click="toggleMute"
-          />
-          <Button
-            class="rounded-full bg-surface-red-7 hover:bg-surface-red-8 rotate-[135deg] text-ink-base"
-            :tooltip="__('Hang Up')"
-            :icon="PhoneIcon"
-            @click="hangUpCall"
-          />
+        <div v-if="onCall" class="flex flex-col items-center gap-3">
+          <div class="flex gap-2">
+            <Button
+              :icon="muted ? 'mic-off' : 'mic'"
+              class="rounded-full"
+              @click="toggleMute"
+            />
+            <Button
+              class="rounded-full"
+              :tooltip="__('Keypad')"
+              @click="showKeypad = !showKeypad"
+            >
+              <template #icon>
+                <DialpadIcon />
+              </template>
+            </Button>
+            <Button
+              class="rounded-full bg-surface-red-7 hover:bg-surface-red-8 rotate-[135deg] text-ink-base"
+              :tooltip="__('Hang Up')"
+              :icon="PhoneIcon"
+              @click="hangUpCall"
+            />
+          </div>
+          <div v-if="showKeypad" class="grid grid-cols-3 gap-2">
+            <Button
+              v-for="key in KEYPAD"
+              :key="key"
+              :label="key"
+              class="!h-9 !w-12 text-lg"
+              @click="sendTone(key)"
+            />
+          </div>
         </div>
         <div v-else-if="calling">
           <Button
@@ -146,6 +166,7 @@
 <script setup>
 import MinimizeIcon from '@/components/Icons/MinimizeIcon.vue'
 import PhoneIcon from '@/components/Icons/PhoneIcon.vue'
+import DialpadIcon from '@/components/Icons/DialpadIcon.vue'
 import CountUpTimer from '@/components/CountUpTimer.vue'
 import { useDraggable, useWindowSize } from '@vueuse/core'
 import { call, toast } from 'frappe-ui'
@@ -161,6 +182,7 @@ const router = useRouter()
 
 const MEDIA = { audio: true, video: false }
 const PC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+const KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']
 
 let ua = null
 let session = null
@@ -173,6 +195,7 @@ const showSmallCallWindow = ref(false)
 const onCall = ref(false)
 const calling = ref(false)
 const muted = ref(false)
+const showKeypad = ref(false)
 const callPopup = ref(null)
 const counterUp = ref(null)
 const callStatus = ref('')
@@ -182,7 +205,7 @@ const party = ref({})
 const { width, height } = useWindowSize()
 
 let { style } = useDraggable(callPopup, {
-  initialValue: { x: width.value - 280, y: height.value - 310 },
+  initialValue: { x: width.value - 280, y: height.value - 480 },
   preventDefault: true,
 })
 
@@ -273,7 +296,10 @@ function openParty() {
 function trackSession(rtcSession) {
   session = rtcSession
   playRemoteAudio(rtcSession)
-  rtcSession.on('progress', () => (callStatus.value = 'ringing'))
+  // an incoming session reports progress too, when it rings here
+  rtcSession.on('progress', () => {
+    if (calling.value) callStatus.value = 'ringing'
+  })
   rtcSession.on('confirmed', () => {
     stopRinging()
     calling.value = false
@@ -322,6 +348,11 @@ function toggleMute() {
   muted.value = session.isMuted().audio
 }
 
+// in-band tones, what Asterisk expects from a WebRTC endpoint
+function sendTone(key) {
+  session?.sendDTMF(key, { transportType: 'RFC2833' })
+}
+
 function makeOutgoingCall(number) {
   if (!ua?.isRegistered()) {
     toast.error(__('The softphone is not connected to the PBX'))
@@ -351,6 +382,7 @@ function resetCall() {
   onCall.value = false
   calling.value = false
   muted.value = false
+  showKeypad.value = false
   callStatus.value = ''
 }
 

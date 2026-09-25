@@ -1,4 +1,11 @@
 <template>
+  <Button
+    v-if="isAnyEnabled"
+    variant="ghost"
+    :tooltip="__('Make a Call')"
+    :icon="PhoneIcon"
+    @click="openDialer"
+  />
   <TwilioCallUI ref="twilio" />
   <ExotelCallUI ref="exotel" />
   <SipCallUI ref="sip" />
@@ -7,26 +14,31 @@
     :title="__('Make Call')"
     :actions="[
       {
-        label: __('Call using {0}', [callMedium]),
+        label:
+          enabledIntegrations.length > 1
+            ? __('Call using {0}', [callMedium])
+            : __('Call'),
         variant: 'solid',
         onClick: makeCallUsing,
       },
     ]"
   >
     <template #default>
-      <div class="flex flex-col gap-4">
+      <div class="flex flex-col gap-4" @keydown.enter="makeCallUsing">
         <FormControl
           v-model="mobileNumber"
-          type="text"
-          :label="__('Mobile Number')"
+          type="tel"
+          :label="__('Phone Number')"
+          autofocus
         />
         <FormControl
+          v-if="enabledIntegrations.length > 1"
           v-model="callMedium"
           type="select"
           :label="__('Calling Medium')"
           :options="enabledIntegrations.map((i) => i.label)"
         />
-        <div class="flex flex-col gap-1">
+        <div v-if="enabledIntegrations.length > 1" class="flex flex-col gap-1">
           <FormControl
             v-model="isDefaultMedium"
             type="checkbox"
@@ -47,6 +59,7 @@
 import TwilioCallUI from '@/components/Telephony/TwilioCallUI.vue'
 import ExotelCallUI from '@/components/Telephony/ExotelCallUI.vue'
 import SipCallUI from '@/components/Telephony/SipCallUI.vue'
+import PhoneIcon from '@/components/Icons/PhoneIcon.vue'
 import { defaultCallingMedium, useTelephony } from '@/composables/telephony'
 import { globalStore } from '@/stores/global'
 import { FormControl, call, toast } from 'frappe-ui'
@@ -89,7 +102,16 @@ function makeCall(number) {
   makeCallUsing()
 }
 
+// a number typed by hand, for calls that have no record to start from
+function openDialer() {
+  mobileNumber.value = ''
+  callMedium.value =
+    defaultCallingMedium.value || enabledIntegrations.value[0]?.label
+  show.value = true
+}
+
 function makeCallUsing() {
+  if (!mobileNumber.value?.trim()) return
   if (isDefaultMedium.value && callMedium.value) {
     setDefaultCallingMedium()
   }

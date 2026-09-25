@@ -1,6 +1,7 @@
 <template>
   <Button
     v-if="isAnyEnabled"
+    class="ml-2"
     variant="ghost"
     :tooltip="__('Make a Call')"
     :icon="PhoneIcon"
@@ -24,13 +25,33 @@
     ]"
   >
     <template #default>
-      <div class="flex flex-col gap-4" @keydown.enter="makeCallUsing">
+      <div class="flex flex-col gap-4" @keydown.enter="dialTyped">
         <FormControl
           v-model="mobileNumber"
-          type="tel"
-          :label="__('Phone Number')"
+          type="text"
+          :label="__('Name or number')"
           autofocus
         />
+        <div
+          v-if="matches.length"
+          class="-mt-2 flex max-h-64 flex-col overflow-y-auto"
+        >
+          <button
+            v-for="match in matches"
+            :key="match.number"
+            type="button"
+            class="flex items-center justify-between gap-3 rounded px-2 py-1.5 text-left text-base hover:bg-surface-gray-2 focus-visible:bg-surface-gray-2 focus-visible:outline-none"
+            @click="callMatch(match)"
+          >
+            <span class="flex min-w-0 flex-col">
+              <span class="truncate text-ink-gray-8">{{ match.label }}</span>
+              <span class="text-sm text-ink-gray-5">{{ __(match.kind) }}</span>
+            </span>
+            <span class="shrink-0 text-ink-gray-7 tabular-nums">
+              {{ match.number }}
+            </span>
+          </button>
+        </div>
         <FormControl
           v-if="enabledIntegrations.length > 1"
           v-model="callMedium"
@@ -63,6 +84,7 @@ import PhoneIcon from '@/components/Icons/PhoneIcon.vue'
 import { defaultCallingMedium, useTelephony } from '@/composables/telephony'
 import { globalStore } from '@/stores/global'
 import { FormControl, call, toast } from 'frappe-ui'
+import { useDebounceFn } from '@vueuse/core'
 import { computed, nextTick, ref, watch } from 'vue'
 
 const { setMakeCall } = globalStore()
@@ -102,9 +124,41 @@ function makeCall(number) {
   makeCallUsing()
 }
 
-// a number typed by hand, for calls that have no record to start from
+// a number typed by hand, or found by name, for calls that have no record
+// to start from
+const matches = ref([])
+
+const DIALABLE = /^\+?[\d\s\-./()]+$/
+
+const searchNumbers = useDebounceFn(async (query) => {
+  if (!show.value || (query || '').trim().length < 2) {
+    matches.value = []
+    return
+  }
+  try {
+    const found = await call('fab_crm.telephony.search_numbers', { query })
+    if (query === mobileNumber.value) matches.value = found
+  } catch {
+    matches.value = []
+  }
+}, 250)
+
+watch(mobileNumber, (query) => searchNumbers(query))
+
+function callMatch(match) {
+  mobileNumber.value = match.number
+  makeCallUsing()
+}
+
+function dialTyped() {
+  // a name picks its first match; digits are dialled as typed
+  if (DIALABLE.test(mobileNumber.value || '')) makeCallUsing()
+  else if (matches.value.length) callMatch(matches.value[0])
+}
+
 function openDialer() {
   mobileNumber.value = ''
+  matches.value = []
   callMedium.value =
     defaultCallingMedium.value || enabledIntegrations.value[0]?.label
   show.value = true

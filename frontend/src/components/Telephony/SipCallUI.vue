@@ -242,6 +242,8 @@ async function setup() {
     return
   }
   domain = credentials.domain
+  ringtone = new Audio(credentials.ringtone)
+  ringtone.loop = true
   ua = new JsSIP.UA({
     sockets: [new JsSIP.WebSocketInterface(credentials.ws_url)],
     uri: credentials.uri,
@@ -269,35 +271,17 @@ function playRemoteAudio(rtcSession) {
   else rtcSession.on('peerconnection', (e) => attach(e.peerconnection))
 }
 
-// ring cadence of an Italian line: 425 Hz, one second on, four off
-let ringContext = null
-let ringTimer = null
+// the ringtone the user picked on their profile, looped
+let ringtone = null
 
 function startRinging() {
-  stopRinging()
-  try {
-    ringContext = new AudioContext()
-  } catch {
-    return
-  }
-  const beep = () => {
-    const oscillator = ringContext.createOscillator()
-    const gain = ringContext.createGain()
-    oscillator.frequency.value = 425
-    gain.gain.value = 0.2
-    oscillator.connect(gain).connect(ringContext.destination)
-    oscillator.start()
-    oscillator.stop(ringContext.currentTime + 1)
-  }
-  beep()
-  ringTimer = setInterval(beep, 5000)
+  if (!ringtone) return
+  ringtone.currentTime = 0
+  ringtone.play().catch((error) => console.log('Ringtone blocked:', error))
 }
 
 function stopRinging() {
-  clearInterval(ringTimer)
-  ringTimer = null
-  ringContext?.close()
-  ringContext = null
+  ringtone?.pause()
 }
 
 async function lookUpParty(number) {

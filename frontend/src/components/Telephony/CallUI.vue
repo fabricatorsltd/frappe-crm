@@ -1,65 +1,31 @@
 <template>
-  <Button
-    v-if="isAnyEnabled"
-    class="ml-2"
-    variant="ghost"
-    :tooltip="__('Make a Call')"
-    :icon="PhoneIcon"
-    @click="openDialer"
-  />
   <TwilioCallUI ref="twilio" />
   <ExotelCallUI ref="exotel" />
-  <SipCallUI ref="sip" />
   <Dialog
     v-model:open="show"
     :title="__('Make Call')"
     :actions="[
       {
-        label:
-          enabledIntegrations.length > 1
-            ? __('Call using {0}', [callMedium])
-            : __('Call'),
+        label: __('Call using {0}', [callMedium]),
         variant: 'solid',
         onClick: makeCallUsing,
       },
     ]"
   >
     <template #default>
-      <div class="flex flex-col gap-4" @keydown.enter="dialTyped">
+      <div class="flex flex-col gap-4">
         <FormControl
           v-model="mobileNumber"
           type="text"
-          :label="__('Name or number')"
-          autofocus
+          :label="__('Mobile Number')"
         />
-        <div
-          v-if="matches.length"
-          class="-mt-2 flex max-h-64 flex-col overflow-y-auto"
-        >
-          <button
-            v-for="match in matches"
-            :key="match.number"
-            type="button"
-            class="flex items-center justify-between gap-3 rounded px-2 py-1.5 text-left text-base hover:bg-surface-gray-2 focus-visible:bg-surface-gray-2 focus-visible:outline-none"
-            @click="callMatch(match)"
-          >
-            <span class="flex min-w-0 flex-col">
-              <span class="truncate text-ink-gray-8">{{ match.label }}</span>
-              <span class="text-sm text-ink-gray-5">{{ __(match.kind) }}</span>
-            </span>
-            <span class="shrink-0 text-ink-gray-7 tabular-nums">
-              {{ match.number }}
-            </span>
-          </button>
-        </div>
         <FormControl
-          v-if="enabledIntegrations.length > 1"
           v-model="callMedium"
           type="select"
           :label="__('Calling Medium')"
-          :options="enabledIntegrations.map((i) => i.label)"
+          :options="['Twilio', 'Exotel']"
         />
-        <div v-if="enabledIntegrations.length > 1" class="flex flex-col gap-1">
+        <div class="flex flex-col gap-1">
           <FormControl
             v-model="isDefaultMedium"
             type="checkbox"
@@ -79,20 +45,30 @@
 <script setup>
 import TwilioCallUI from '@/components/Telephony/TwilioCallUI.vue'
 import ExotelCallUI from '@/components/Telephony/ExotelCallUI.vue'
-import SipCallUI from '@/components/Telephony/SipCallUI.vue'
-import PhoneIcon from '@/components/Icons/PhoneIcon.vue'
 import { defaultCallingMedium, useTelephony } from '@/composables/telephony'
 import { globalStore } from '@/stores/global'
 import { FormControl, call, toast } from 'frappe-ui'
-import { useDebounceFn } from '@vueuse/core'
+import { useEventListener } from '@vueuse/core'
 import { computed, nextTick, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 const { setMakeCall } = globalStore()
+const router = useRouter()
+
+// the softphone's caller name opens their lead or deal here, not in a new tab
+useEventListener(window, 'fab-softphone:open-party', (event) => {
+  const { doctype, name } = event.detail
+  const deal = doctype === 'CRM Deal'
+  event.preventDefault()
+  router.push({
+    name: deal ? 'Deal' : 'Lead',
+    params: { [deal ? 'dealId' : 'leadId']: name },
+  })
+})
 const { isEnabled, isAnyEnabled } = useTelephony()
 
 const twilio = ref(null)
 const exotel = ref(null)
-const sip = ref(null)
 
 const callMedium = ref('Twilio')
 const isDefaultMedium = ref(false)
@@ -104,7 +80,7 @@ const enabledIntegrations = computed(() =>
   [
     { key: 'twilio', label: 'Twilio', ref: twilio },
     { key: 'exotel', label: 'Exotel', ref: exotel },
-    { key: 'sip', label: 'SIP', ref: sip },
+    { key: 'sip', label: 'SIP' },
   ].filter(({ key }) => isEnabled(key)),
 )
 
@@ -124,48 +100,7 @@ function makeCall(number) {
   makeCallUsing()
 }
 
-// a number typed by hand, or found by name, for calls that have no record
-// to start from
-const matches = ref([])
-
-const DIALABLE = /^\+?[\d\s\-./()*#]+$/
-
-const searchNumbers = useDebounceFn(async (query) => {
-  if (!show.value || (query || '').trim().length < 2) {
-    matches.value = []
-    return
-  }
-  try {
-    const found = await call('fab_crm.telephony.search_numbers', { query })
-    if (query === mobileNumber.value) matches.value = found
-  } catch {
-    matches.value = []
-  }
-}, 250)
-
-watch(mobileNumber, (query) => searchNumbers(query))
-
-function callMatch(match) {
-  mobileNumber.value = match.number
-  makeCallUsing()
-}
-
-function dialTyped() {
-  // a name picks its first match; digits are dialled as typed
-  if (DIALABLE.test(mobileNumber.value || '')) makeCallUsing()
-  else if (matches.value.length) callMatch(matches.value[0])
-}
-
-function openDialer() {
-  mobileNumber.value = ''
-  matches.value = []
-  callMedium.value =
-    defaultCallingMedium.value || enabledIntegrations.value[0]?.label
-  show.value = true
-}
-
 function makeCallUsing() {
-  if (!mobileNumber.value?.trim()) return
   if (isDefaultMedium.value && callMedium.value) {
     setDefaultCallingMedium()
   }
@@ -178,8 +113,9 @@ function makeCallUsing() {
     exotel.value.makeOutgoingCall(mobileNumber.value)
   }
 
+  // the softphone every page of the site shares, loaded by crm.html
   if (callMedium.value === 'SIP') {
-    sip.value.makeOutgoingCall(mobileNumber.value)
+    window.fab_softphone?.dial(mobileNumber.value)
   }
   show.value = false
 }
@@ -204,7 +140,8 @@ watch(
         label,
         ref: integrationRef,
       } of enabledIntegrations.value) {
-        integrationRef.value.setup()
+        // SIP has no component here: the shared softphone sets itself up
+        integrationRef?.value.setup()
         callMedium.value = label
       }
 

@@ -359,7 +359,8 @@ function makeOutgoingCall(number) {
     return
   }
   if (session) return
-  phoneNumber.value = (number || '').replace(/(?!^\+)\D/g, '')
+  // * and # stay: PBX feature codes such as *99101 are dialled as typed
+  phoneNumber.value = (number || '').replace(/(?!^\+)[^\d*#]/g, '')
   if (!phoneNumber.value) return
   lookUpParty(phoneNumber.value)
   calling.value = true

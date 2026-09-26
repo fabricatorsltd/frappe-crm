@@ -128,7 +128,7 @@ function makeCall(number) {
 // to start from
 const matches = ref([])
 
-const DIALABLE = /^\+?[\d\s\-./()]+$/
+const DIALABLE = /^\+?[\d\s\-./()*#]+$/
 
 const searchNumbers = useDebounceFn(async (query) => {
   if (!show.value || (query || '').trim().length < 2) {

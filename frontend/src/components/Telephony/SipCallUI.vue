@@ -59,6 +59,12 @@
               @click="hangUpCall"
             />
           </div>
+          <div
+            v-if="digits"
+            class="max-w-full truncate text-xl tabular-nums tracking-wider text-ink-gray-1"
+          >
+            {{ digits.slice(-16) }}
+          </div>
           <div v-if="showKeypad" class="grid grid-cols-3 gap-2">
             <Button
               v-for="key in KEYPAD"
@@ -168,7 +174,7 @@ import MinimizeIcon from '@/components/Icons/MinimizeIcon.vue'
 import PhoneIcon from '@/components/Icons/PhoneIcon.vue'
 import DialpadIcon from '@/components/Icons/DialpadIcon.vue'
 import CountUpTimer from '@/components/CountUpTimer.vue'
-import { useDraggable, useWindowSize } from '@vueuse/core'
+import { useDraggable, useEventListener, useWindowSize } from '@vueuse/core'
 import { call, toast } from 'frappe-ui'
 import JsSIP from 'jssip'
 import { ref } from 'vue'
@@ -183,6 +189,21 @@ const router = useRouter()
 const MEDIA = { audio: true, video: false }
 const PC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
 const KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']
+// the two frequencies of each key, as a phone plays them back to the caller
+const DTMF = {
+  1: [697, 1209],
+  2: [697, 1336],
+  3: [697, 1477],
+  4: [770, 1209],
+  5: [770, 1336],
+  6: [770, 1477],
+  7: [852, 1209],
+  8: [852, 1336],
+  9: [852, 1477],
+  '*': [941, 1209],
+  0: [941, 1336],
+  '#': [941, 1477],
+}
 
 let ua = null
 let session = null
@@ -201,6 +222,8 @@ const counterUp = ref(null)
 const callStatus = ref('')
 const phoneNumber = ref('')
 const party = ref({})
+const digits = ref('')
+let toneContext = null
 
 const { width, height } = useWindowSize()
 
@@ -348,10 +371,41 @@ function toggleMute() {
   muted.value = session.isMuted().audio
 }
 
-// in-band tones, what Asterisk expects from a WebRTC endpoint
+// RFC 4733 events, what Asterisk expects from a WebRTC endpoint; they carry
+// no sound, so the key is played here and shown, as on a phone
 function sendTone(key) {
-  session?.sendDTMF(key, { transportType: 'RFC2833' })
+  if (!session) return
+  session.sendDTMF(key, { transportType: 'RFC2833' })
+  digits.value += key
+  playTone(key)
 }
+
+function playTone(key) {
+  try {
+    toneContext ||= new AudioContext()
+  } catch {
+    return
+  }
+  const gain = toneContext.createGain()
+  gain.gain.value = 0.08
+  gain.connect(toneContext.destination)
+  const end = toneContext.currentTime + 0.15
+  for (const frequency of DTMF[key]) {
+    const oscillator = toneContext.createOscillator()
+    oscillator.frequency.value = frequency
+    oscillator.connect(gain)
+    oscillator.start()
+    oscillator.stop(end)
+  }
+}
+
+// the computer keyboard dials too, while a call is up
+useEventListener(document, 'keydown', (e) => {
+  if (!onCall.value || !(e.key in DTMF)) return
+  if (e.target.closest?.('input, textarea, [contenteditable]')) return
+  e.preventDefault()
+  sendTone(e.key)
+})
 
 function makeOutgoingCall(number) {
   if (!ua?.isRegistered()) {
@@ -384,6 +438,7 @@ function resetCall() {
   calling.value = false
   muted.value = false
   showKeypad.value = false
+  digits.value = ''
   callStatus.value = ''
 }
 

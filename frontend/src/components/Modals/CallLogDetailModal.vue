@@ -85,6 +85,27 @@
                   {{ field.value.receiver.label }}
                 </div>
               </div>
+              <div
+                v-else-if="field.name == 'number'"
+                class="flex items-center gap-1"
+              >
+                <span class="tabular-nums">{{ field.value }}</span>
+                <Button
+                  variant="ghost"
+                  icon="lucide-copy"
+                  class="w-7"
+                  :tooltip="__('Copy')"
+                  @click="copyNumber(field.value)"
+                />
+                <Button
+                  v-if="canDial"
+                  variant="ghost"
+                  :icon="PhoneIcon"
+                  class="w-7"
+                  :tooltip="__('Call')"
+                  @click="dial(field.value)"
+                />
+              </div>
               <Tooltip v-else-if="field.tooltip" :text="field.tooltip">
                 {{ field.value }}
               </Tooltip>
@@ -179,6 +200,7 @@ import CalendarIcon from '@/components/Icons/CalendarIcon.vue'
 import NoteIcon from '@/components/Icons/NoteIcon.vue'
 import TaskIcon from '@/components/Icons/TaskIcon.vue'
 import CheckCircleIcon from '@/components/Icons/CheckCircleIcon.vue'
+import PhoneIcon from '@/components/Icons/PhoneIcon.vue'
 import FadedScrollableDiv from '@/components/FadedScrollableDiv.vue'
 import { getCallLogDetail } from '@/utils/callLog'
 import { sanitizeHTML } from '@/utils'
@@ -206,6 +228,19 @@ const task = ref('')
 // (recording never made / expired) — track load failure to show a fallback instead
 // of a dead 0:00 player
 const recordingError = ref(false)
+
+// the softphone every page shares, loaded by crm.html for users with one
+const canDial = computed(() => Boolean(window.fab_softphone?.config))
+
+async function copyNumber(number) {
+  await navigator.clipboard.writeText(number)
+  toast.success(__('Copied to clipboard'))
+}
+
+function dial(number) {
+  show.value = false
+  window.fab_softphone.dial(number)
+}
 
 function showNote(name) {
   showModal({
@@ -284,6 +319,19 @@ const detailFields = computed(() => {
         receiver: data.receiver,
         caller: data.caller,
       },
+    },
+    {
+      // the other party's number, to copy or call back
+      icon: PhoneIcon,
+      name: 'number',
+      value:
+        callLog.value.data.type === 'Incoming'
+          ? callLog.value.data.from
+          : callLog.value.data.to,
+      condition: () =>
+        callLog.value.data.type === 'Incoming'
+          ? callLog.value.data.from
+          : callLog.value.data.to,
     },
     {
       icon: data._lead ? LeadsIcon : Dealsicon,
